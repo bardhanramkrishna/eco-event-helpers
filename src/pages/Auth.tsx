@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "@/components/layout/MainLayout";
@@ -19,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 // Form validation schemas
 const signInSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
+  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
   location: z.string().min(3, { message: "Please enter your event location" }),
 });
 
@@ -44,6 +44,7 @@ const Auth = () => {
     resolver: zodResolver(signInSchema),
     defaultValues: {
       email: "",
+      password: "",
       location: "",
     },
   });
@@ -63,17 +64,9 @@ const Auth = () => {
   const onSignInSubmit = async (values: z.infer<typeof signInSchema>) => {
     setLoading(true);
     try {
-      await signIn(values.email, values.location);
-      toast({
-        title: "Magic link sent!",
-        description: "Check your email for a sign-in link.",
-      });
+      await signIn(values.email, values.password, values.location);
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to send magic link. Please try again.",
-        variant: "destructive",
-      });
+      // Error is handled in the auth context
     } finally {
       setLoading(false);
     }
@@ -87,17 +80,9 @@ const Auth = () => {
         role: values.role,
         location: values.location,
       });
-      toast({
-        title: "Account created!",
-        description: "Please check your email to verify your account.",
-      });
       setActiveTab("sign-in");
     } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to create account. Please try again.",
-        variant: "destructive",
-      });
+      // Error is handled in the auth context
     } finally {
       setLoading(false);
     }

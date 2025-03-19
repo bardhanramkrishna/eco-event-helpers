@@ -1,23 +1,17 @@
 
 import { createContext, useState, useEffect, ReactNode } from "react";
 import { useToast } from "@/hooks/use-toast";
-
-// Define the shape of our user data
-interface User {
-  id: string;
-  email: string;
-  name?: string;
-  role?: "event_manager" | "individual";
-  location?: string;
-}
+import { supabase, User } from "@/lib/supabase";
+import { useNavigate } from "react-router-dom";
 
 // Define the shape of our auth context
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: (email: string, location: string) => Promise<void>;
+  signIn: (email: string, password: string, location: string) => Promise<void>;
   signUp: (email: string, password: string, userData: Partial<User>) => Promise<void>;
   signOut: () => Promise<void>;
+  updateLocation: (location: string) => Promise<void>;
 }
 
 // Default values
@@ -27,6 +21,7 @@ const defaultAuthContext: AuthContextType = {
   signIn: async () => {},
   signUp: async () => {},
   signOut: async () => {},
+  updateLocation: async () => {},
 };
 
 // Create context
@@ -42,16 +37,33 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Initialize auth on component mount
   useEffect(() => {
     // Check for existing session
     const checkSession = async () => {
       try {
-        // For demo purposes, check local storage for user data
-        const storedUser = localStorage.getItem("ecoGenUser");
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
+        // Get current session
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          throw sessionError;
+        }
+
+        if (session) {
+          // Get user profile
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+          if (userError) throw userError;
+          
+          if (userData) {
+            setUser(userData);
+          }
         }
       } catch (error) {
         console.error("Error checking session:", error);
@@ -61,33 +73,108 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     };
     
     checkSession();
+
+    // Set up auth state listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session) {
+          // Get user profile when auth state changes
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+          
+          if (!userError && userData) {
+            setUser(userData);
+          } else {
+            console.error("Error fetching user data:", userError);
+          }
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      }
+    );
+
+    // Cleanup subscription on unmount
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  // Sign in with magic link
-  const signIn = async (email: string, location: string) => {
-    // In a real app, you would call your auth provider's magic link method
-    // For demo purposes, we'll simulate a successful auth
+  // Sign in with email and password
+  const signIn = async (email: string, password: string, location: string) => {
     try {
       setLoading(true);
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Create a mock user for demo
-      const mockUser: User = {
-        id: `user-${Math.random().toString(36).substr(2, 9)}`,
+      // Sign in with Supabase auth
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        location,
-        // Default to individual role for magic link sign in
-        role: "individual"
-      };
+        password,
+      });
+
+      if (error) throw error;
       
-      setUser(mockUser);
-      localStorage.setItem("ecoGenUser", JSON.stringify(mockUser));
-      
-      return Promise.resolve();
-    } catch (error) {
+      if (data.user) {
+        // Check if user profile exists
+        const { data: userData, error: profileError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+        
+        if (profileError && profileError.code !== 'PGRST116') {
+          throw profileError;
+        }
+
+        // If profile exists, update location
+        if (userData) {
+          const { error: updateError } = await supabase
+            .from('users')
+            .update({ location })
+            .eq('id', data.user.id);
+          
+          if (updateError) throw updateError;
+        } else {
+          // Create user profile if it doesn't exist
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert({
+              id: data.user.id,
+              email,
+              location,
+              role: 'individual',
+            });
+          
+          if (insertError) throw insertError;
+        }
+
+        // Fetch updated user data
+        const { data: updatedUser, error: fetchError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+        
+        if (fetchError) throw fetchError;
+        setUser(updatedUser);
+        
+        toast({
+          title: "Signed in successfully",
+          description: "Welcome back!",
+        });
+        
+        navigate('/dashboard');
+      }
+    } catch (error: any) {
       console.error("Error signing in:", error);
-      return Promise.reject(error);
+      toast({
+        title: "Error signing in",
+        description: error.message || "Failed to sign in. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -95,28 +182,44 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
 
   // Sign up with email and password
   const signUp = async (email: string, password: string, userData: Partial<User>) => {
-    // In a real app, you would call your auth provider's sign up method
-    // For demo purposes, we'll simulate a successful registration
     try {
       setLoading(true);
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
       
-      // Create a mock user for demo
-      const mockUser: User = {
-        id: `user-${Math.random().toString(36).substr(2, 9)}`,
+      // Sign up with Supabase auth
+      const { data, error } = await supabase.auth.signUp({
         email,
-        ...userData
-      };
+        password,
+      });
+
+      if (error) throw error;
       
-      // In a real app, we wouldn't set the user here yet since they need to verify email
-      // For demo, we'll just log the user registration
-      console.log("User registered:", mockUser);
-      
-      return Promise.resolve();
-    } catch (error) {
+      if (data.user) {
+        // Create user profile
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            email,
+            location: userData.location || '',
+            role: userData.role || 'individual',
+            name: userData.name || null,
+          });
+        
+        if (profileError) throw profileError;
+        
+        toast({
+          title: "Account created",
+          description: "Please check your email to verify your account.",
+        });
+      }
+    } catch (error: any) {
       console.error("Error signing up:", error);
-      return Promise.reject(error);
+      toast({
+        title: "Error creating account",
+        description: error.message || "Failed to create account. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -126,14 +229,61 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const signOut = async () => {
     try {
       setLoading(true);
-      // Clear local storage
-      localStorage.removeItem("ecoGenUser");
-      // Clear user state
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      
       setUser(null);
-      return Promise.resolve();
-    } catch (error) {
+      navigate('/auth');
+      
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully.",
+      });
+    } catch (error: any) {
       console.error("Error signing out:", error);
-      return Promise.reject(error);
+      toast({
+        title: "Error signing out",
+        description: error.message || "Failed to sign out. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update user's location
+  const updateLocation = async (location: string) => {
+    if (!user) return;
+    
+    try {
+      setLoading(true);
+      
+      const { error } = await supabase
+        .from('users')
+        .update({ location })
+        .eq('id', user.id);
+      
+      if (error) throw error;
+      
+      // Update local user state
+      setUser({
+        ...user,
+        location,
+      });
+      
+      toast({
+        title: "Location updated",
+        description: "Your event location has been updated successfully.",
+      });
+    } catch (error: any) {
+      console.error("Error updating location:", error);
+      toast({
+        title: "Error updating location",
+        description: error.message || "Failed to update location. Please try again.",
+        variant: "destructive",
+      });
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -145,7 +295,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     loading,
     signIn,
     signUp,
-    signOut
+    signOut,
+    updateLocation
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

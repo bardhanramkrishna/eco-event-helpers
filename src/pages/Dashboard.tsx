@@ -4,28 +4,60 @@ import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PlusCircle, Calendar, Trash, Heart, MapPin, BarChart, Recycle, Building } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { PlusCircle, Calendar, Trash, Heart, MapPin, BarChart, Recycle, Building, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import LocationMap from "@/components/maps/LocationMap";
+import { useNearbyLocations } from "@/hooks/useNearbyLocations";
+import { LocationType } from "@/lib/supabase";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
 
-// Dummy waste category data
+// Location update schema
+const locationSchema = z.object({
+  location: z.string().min(3, { message: "Location must be at least 3 characters" }),
+});
+
+// Waste category data
 const wasteCategories = [
-  { id: "plastic", name: "Plastic", icon: Recycle, color: "text-blue-500" },
-  { id: "food", name: "Food Waste", icon: Heart, color: "text-red-500" },
-  { id: "organic", name: "Organic Waste", icon: Building, color: "text-green-500" }
+  { id: "recycling", name: "Recyclable Waste", icon: Recycle, color: "text-blue-500" },
+  { id: "orphanage", name: "Leftover Food", icon: Heart, color: "text-red-500" },
+  { id: "biogas", name: "Organic Waste", icon: Building, color: "text-green-500" }
 ];
 
 const Dashboard = () => {
   const { toast } = useToast();
-  const { user } = useAuth();
-  const [activeCategory, setActiveCategory] = useState("all");
+  const { user, updateLocation } = useAuth();
+  const [activeCategory, setActiveCategory] = useState<LocationType | "all">("all");
+  const { locations } = useNearbyLocations(user?.location, activeCategory !== "all" ? activeCategory as LocationType : undefined);
+  const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
+
+  const locationForm = useForm<z.infer<typeof locationSchema>>({
+    resolver: zodResolver(locationSchema),
+    defaultValues: {
+      location: user?.location || "",
+    },
+  });
 
   const handleCreateEvent = () => {
     toast({
       title: "Coming Soon!",
       description: "Event creation will be available in the next update.",
     });
+  };
+
+  const handleUpdateLocation = async (values: z.infer<typeof locationSchema>) => {
+    try {
+      setIsUpdatingLocation(true);
+      await updateLocation(values.location);
+    } catch (error) {
+      // Error is handled in the auth context
+    } finally {
+      setIsUpdatingLocation(false);
+    }
   };
 
   return (
@@ -42,31 +74,78 @@ const Dashboard = () => {
           </Button>
         </div>
 
+        {/* Location Update Card */}
+        <Card className="eco-card mb-8">
+          <CardHeader>
+            <CardTitle>Your Event Location</CardTitle>
+            <CardDescription>Update your location to find nearby waste management facilities</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Form {...locationForm}>
+              <form onSubmit={locationForm.handleSubmit(handleUpdateLocation)} className="space-y-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <FormField
+                    control={locationForm.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem className="flex-1">
+                        <FormLabel>Event Location</FormLabel>
+                        <FormControl>
+                          <div className="relative">
+                            <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                            <Input placeholder="Enter city or address" className="pl-10" {...field} />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button 
+                    type="submit" 
+                    className="self-end min-w-32" 
+                    disabled={isUpdatingLocation || !locationForm.formState.isDirty}
+                  >
+                    {isUpdatingLocation ? (
+                      "Updating..."
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Update Location
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Each facility type count card */}
           <Card className="eco-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center">
-                <Calendar className="mr-2 h-5 w-5 text-primary" />
-                Total Events
+                <MapPin className="mr-2 h-5 w-5 text-primary" />
+                Total Facilities
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-muted-foreground text-sm">Events managed</p>
+              <p className="text-3xl font-bold">{locations.length}</p>
+              <p className="text-muted-foreground text-sm">Total waste management facilities</p>
             </CardContent>
           </Card>
 
           <Card className="eco-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center">
-                <Trash className="mr-2 h-5 w-5 text-eco-water-blue" />
-                Waste Recycled
+                <Recycle className="mr-2 h-5 w-5 text-eco-water-blue" />
+                Recycling Centers
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">0 kg</p>
-              <p className="text-muted-foreground text-sm">Total waste recycled</p>
+              <p className="text-3xl font-bold">{locations.filter(l => l.type === 'recycling').length}</p>
+              <p className="text-muted-foreground text-sm">Nearby recycling facilities</p>
             </CardContent>
           </Card>
 
@@ -74,25 +153,25 @@ const Dashboard = () => {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center">
                 <Heart className="mr-2 h-5 w-5 text-red-500" />
-                Food Donated
+                Orphanages
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">0 kg</p>
-              <p className="text-muted-foreground text-sm">Total food donated</p>
+              <p className="text-3xl font-bold">{locations.filter(l => l.type === 'orphanage').length}</p>
+              <p className="text-muted-foreground text-sm">For leftover food donations</p>
             </CardContent>
           </Card>
 
           <Card className="eco-card">
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center">
-                <MapPin className="mr-2 h-5 w-5 text-eco-earth-brown" />
-                Locations
+                <Building className="mr-2 h-5 w-5 text-eco-earth-brown" />
+                Biogas Plants
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold">0</p>
-              <p className="text-muted-foreground text-sm">Facilities connected</p>
+              <p className="text-3xl font-bold">{locations.filter(l => l.type === 'biogas').length}</p>
+              <p className="text-muted-foreground text-sm">For organic waste</p>
             </CardContent>
           </Card>
         </div>
@@ -100,8 +179,8 @@ const Dashboard = () => {
         {/* Location Map */}
         <Card className="eco-card mb-8">
           <CardHeader>
-            <CardTitle>Your Location</CardTitle>
-            <CardDescription>Nearby waste management facilities based on your location</CardDescription>
+            <CardTitle>Nearby Facilities</CardTitle>
+            <CardDescription>Waste management facilities based on your location</CardDescription>
           </CardHeader>
           <CardContent>
             <LocationMap location={user?.location} />
@@ -115,7 +194,11 @@ const Dashboard = () => {
             <CardDescription>Select waste type to see recommended disposal options</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="all" value={activeCategory} onValueChange={setActiveCategory}>
+            <Tabs 
+              defaultValue="all" 
+              value={activeCategory} 
+              onValueChange={(value) => setActiveCategory(value as LocationType | "all")}
+            >
               <TabsList className="mb-6">
                 <TabsTrigger value="all">All Types</TabsTrigger>
                 {wasteCategories.map(category => (
@@ -127,8 +210,26 @@ const Dashboard = () => {
               </TabsList>
               
               <TabsContent value="all">
-                <div className="bg-muted p-6 rounded-md text-center">
-                  <p>Select a specific waste category to see disposal recommendations</p>
+                <div className="bg-muted p-6 rounded-md">
+                  <h3 className="text-lg font-medium mb-4">All Waste Management Facilities</h3>
+                  {locations.length > 0 ? (
+                    <div className="space-y-4">
+                      {locations.map(location => (
+                        <div key={location.id} className="bg-card p-4 rounded-md flex items-start gap-3">
+                          {location.type === 'recycling' && <Recycle className="h-5 w-5 text-blue-500 mt-1" />}
+                          {location.type === 'biogas' && <Building className="h-5 w-5 text-green-500 mt-1" />}
+                          {location.type === 'orphanage' && <Heart className="h-5 w-5 text-red-500 mt-1" />}
+                          <div>
+                            <p className="font-medium">{location.name}</p>
+                            <p className="text-sm text-muted-foreground">{location.address}, {location.city}</p>
+                            {location.contact && <p className="text-sm mt-1">{location.contact}</p>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground">No facilities found near your location.</p>
+                  )}
                 </div>
               </TabsContent>
               
@@ -139,95 +240,31 @@ const Dashboard = () => {
                       <category.icon className={`mr-2 h-5 w-5 ${category.color}`} />
                       {category.name} Disposal Recommendations
                     </h3>
-                    <p className="mb-4">Based on your location, here are the recommended facilities for {category.name.toLowerCase()} disposal:</p>
                     
-                    <div className="bg-card p-4 rounded-md mb-4">
-                      <p className="font-medium">No facilities found</p>
-                      <p className="text-sm text-muted-foreground">Please create an event to see nearby facilities</p>
-                    </div>
-                    
-                    <Button 
-                      variant="outline" 
-                      className="w-full"
-                      onClick={handleCreateEvent}
-                    >
-                      <PlusCircle className="mr-2 h-4 w-4" />
-                      Create Event to See Recommendations
-                    </Button>
+                    {locations.filter(l => l.type === category.id).length > 0 ? (
+                      <div className="space-y-4">
+                        {locations
+                          .filter(location => location.type === category.id)
+                          .map(location => (
+                            <div key={location.id} className="bg-card p-4 rounded-md">
+                              <p className="font-medium">{location.name}</p>
+                              <p className="text-sm text-muted-foreground">{location.address}, {location.city}</p>
+                              {location.contact && <p className="text-sm mt-1">{location.contact}</p>}
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <div className="bg-card p-4 rounded-md mb-4">
+                        <p className="font-medium">No facilities found</p>
+                        <p className="text-sm text-muted-foreground">No {category.name.toLowerCase()} disposal facilities found near your location.</p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
               ))}
             </Tabs>
           </CardContent>
         </Card>
-
-        {/* Main content area */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <Card className="eco-card lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Recent Events</CardTitle>
-              <CardDescription>Manage your recent events and their sustainability metrics</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="rounded-md border">
-                <div className="py-12 text-center text-muted-foreground">
-                  <Calendar className="mx-auto h-12 w-12 text-muted-foreground/50 mb-2" />
-                  <p>No events created yet</p>
-                  <Button className="mt-4" variant="outline" onClick={handleCreateEvent}>
-                    Create Your First Event
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="eco-card">
-            <CardHeader>
-              <CardTitle>Sustainability Impact</CardTitle>
-              <CardDescription>Your environmental contribution</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex flex-col">
-                  <div className="flex justify-between mb-1 text-sm">
-                    <span>CO₂ Emissions Saved</span>
-                    <span className="font-medium">0 kg</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-primary rounded-full h-2 w-0"></div>
-                  </div>
-                </div>
-                
-                <div className="flex flex-col">
-                  <div className="flex justify-between mb-1 text-sm">
-                    <span>Water Saved</span>
-                    <span className="font-medium">0 L</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-eco-water-blue rounded-full h-2 w-0"></div>
-                  </div>
-                </div>
-                
-                <div className="flex flex-col">
-                  <div className="flex justify-between mb-1 text-sm">
-                    <span>Trees Equivalent</span>
-                    <span className="font-medium">0 trees</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-eco-green-medium rounded-full h-2 w-0"></div>
-                  </div>
-                </div>
-                
-                <div className="pt-4 text-center">
-                  <Button variant="outline" className="w-full" onClick={() => toast({ title: "Coming Soon!", description: "Detailed analytics will be available in the next update." })}>
-                    <BarChart className="mr-2 h-4 w-4" />
-                    View Detailed Report
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </MainLayout>
   );
