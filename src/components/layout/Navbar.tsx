@@ -1,14 +1,34 @@
 
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Menu, X, Leaf, Sun, Moon } from "lucide-react";
+import { 
+  Menu, 
+  X, 
+  Leaf, 
+  Sun, 
+  Moon, 
+  User,
+  LogOut
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const { toast } = useToast();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Check for saved theme preference or use system preference
@@ -33,11 +53,21 @@ const Navbar = () => {
     }
   };
 
-  const handleSignInClick = () => {
-    toast({
-      title: "Coming Soon!",
-      description: "Sign in functionality will be available in the next update.",
-    });
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast({
+        title: "Signed out",
+        description: "You have been successfully signed out.",
+      });
+      navigate("/");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to sign out. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const navigation = [
@@ -46,6 +76,12 @@ const Navbar = () => {
     { name: "Find Locations", href: "/locations" },
     { name: "Community", href: "/community" },
   ];
+
+  // Generate avatar initials from user's email
+  const getInitials = () => {
+    if (!user?.email) return "GU";
+    return user.email.substring(0, 2).toUpperCase();
+  };
 
   return (
     <nav className="bg-card shadow-sm sticky top-0 z-50">
@@ -79,19 +115,51 @@ const Navbar = () => {
               >
                 {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleSignInClick}
-                className="rounded-full"
-              >
-                Sign In
-              </Button>
-              <Button
-                className="eco-btn-primary rounded-full"
-                onClick={handleSignInClick}
-              >
-                Get Started
-              </Button>
+              
+              {user ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="relative rounded-full h-10 w-10 p-0">
+                      <Avatar>
+                        <AvatarFallback className="bg-primary text-primary-foreground">
+                          {getInitials()}
+                        </AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end">
+                    <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/dashboard")}>
+                      Dashboard
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/profile")}>
+                      Profile
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem className="cursor-pointer text-destructive" onClick={handleSignOut}>
+                      <LogOut className="h-4 w-4 mr-2" />
+                      Sign Out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate("/auth")}
+                    className="rounded-full"
+                  >
+                    Sign In
+                  </Button>
+                  <Button
+                    className="eco-btn-primary rounded-full"
+                    onClick={() => navigate("/auth?tab=sign-up")}
+                  >
+                    Get Started
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -132,19 +200,65 @@ const Navbar = () => {
               </Link>
             ))}
             <div className="mt-4 pt-4 border-t border-border flex flex-col space-y-2">
-              <Button
-                variant="outline"
-                onClick={handleSignInClick}
-                className="w-full"
-              >
-                Sign In
-              </Button>
-              <Button
-                className="eco-btn-primary w-full"
-                onClick={handleSignInClick}
-              >
-                Get Started
-              </Button>
+              {user ? (
+                <>
+                  <div className="flex items-center px-3 py-2">
+                    <Avatar className="h-8 w-8 mr-2">
+                      <AvatarFallback className="bg-primary text-primary-foreground">
+                        {getInitials()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-medium">{user.email}</p>
+                      <p className="text-xs text-muted-foreground">{user.role}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="justify-start"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      navigate("/profile");
+                    }}
+                  >
+                    <User className="h-4 w-4 mr-2" />
+                    Profile
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="justify-start text-destructive"
+                    onClick={() => {
+                      handleSignOut();
+                      setIsMenuOpen(false);
+                    }}
+                  >
+                    <LogOut className="h-4 w-4 mr-2" />
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      navigate("/auth");
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full"
+                  >
+                    Sign In
+                  </Button>
+                  <Button
+                    className="eco-btn-primary w-full"
+                    onClick={() => {
+                      navigate("/auth?tab=sign-up");
+                      setIsMenuOpen(false);
+                    }}
+                  >
+                    Get Started
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -1,12 +1,25 @@
 
+import { useState } from "react";
 import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Calendar, Trash, Heart, MapPin, BarChart } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PlusCircle, Calendar, Trash, Heart, MapPin, BarChart, Recycle, Building } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
+import LocationMap from "@/components/maps/LocationMap";
+
+// Dummy waste category data
+const wasteCategories = [
+  { id: "plastic", name: "Plastic", icon: Recycle, color: "text-blue-500" },
+  { id: "food", name: "Food Waste", icon: Heart, color: "text-red-500" },
+  { id: "organic", name: "Organic Waste", icon: Building, color: "text-green-500" }
+];
 
 const Dashboard = () => {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const [activeCategory, setActiveCategory] = useState("all");
 
   const handleCreateEvent = () => {
     toast({
@@ -83,6 +96,70 @@ const Dashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Location Map */}
+        <Card className="eco-card mb-8">
+          <CardHeader>
+            <CardTitle>Your Location</CardTitle>
+            <CardDescription>Nearby waste management facilities based on your location</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <LocationMap location={user?.location} />
+          </CardContent>
+        </Card>
+
+        {/* Waste Categorization */}
+        <Card className="eco-card mb-8">
+          <CardHeader>
+            <CardTitle>Smart Waste Categorization</CardTitle>
+            <CardDescription>Select waste type to see recommended disposal options</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="all" value={activeCategory} onValueChange={setActiveCategory}>
+              <TabsList className="mb-6">
+                <TabsTrigger value="all">All Types</TabsTrigger>
+                {wasteCategories.map(category => (
+                  <TabsTrigger key={category.id} value={category.id} className="flex items-center">
+                    <category.icon className={`mr-2 h-4 w-4 ${category.color}`} />
+                    {category.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              
+              <TabsContent value="all">
+                <div className="bg-muted p-6 rounded-md text-center">
+                  <p>Select a specific waste category to see disposal recommendations</p>
+                </div>
+              </TabsContent>
+              
+              {wasteCategories.map(category => (
+                <TabsContent key={category.id} value={category.id}>
+                  <div className="bg-muted p-6 rounded-md">
+                    <h3 className="text-lg font-medium mb-4 flex items-center">
+                      <category.icon className={`mr-2 h-5 w-5 ${category.color}`} />
+                      {category.name} Disposal Recommendations
+                    </h3>
+                    <p className="mb-4">Based on your location, here are the recommended facilities for {category.name.toLowerCase()} disposal:</p>
+                    
+                    <div className="bg-card p-4 rounded-md mb-4">
+                      <p className="font-medium">No facilities found</p>
+                      <p className="text-sm text-muted-foreground">Please create an event to see nearby facilities</p>
+                    </div>
+                    
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={handleCreateEvent}
+                    >
+                      <PlusCircle className="mr-2 h-4 w-4" />
+                      Create Event to See Recommendations
+                    </Button>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </CardContent>
+        </Card>
 
         {/* Main content area */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
