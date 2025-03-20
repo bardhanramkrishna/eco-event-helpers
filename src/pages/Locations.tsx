@@ -1,16 +1,18 @@
-
 import { useState, useEffect } from "react";
 import MainLayout from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, MapPin, Recycle, Heart, Building } from "lucide-react";
+import { Search, MapPin, Recycle, Heart, Building, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useNearbyLocations } from "@/hooks/useNearbyLocations";
 import { Location as FacilityLocation, LocationType } from "@/lib/supabase";
 import LocationMap from "@/components/maps/LocationMap";
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface LocationCardProps {
   facility: FacilityLocation;
@@ -51,7 +53,16 @@ const Locations = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const { user } = useAuth();
-  const { locations, loading } = useNearbyLocations(user?.location, activeTab);
+  const { 
+    locations, 
+    loading, 
+    error,
+    pagination,
+    nextPage,
+    prevPage,
+    setPageSize,
+    refresh
+  } = useNearbyLocations(user?.location, activeTab);
 
   const handleViewDetails = (facility: FacilityLocation) => {
     toast({
@@ -68,7 +79,6 @@ const Locations = () => {
     });
   };
 
-  // Filter locations based on search query if needed
   const filteredLocations = searchQuery.length > 2
     ? locations.filter(
         (location) =>
@@ -101,9 +111,8 @@ const Locations = () => {
           </p>
         </div>
 
-        {/* Search and Filter */}
-        <div className="mb-8">
-          <form onSubmit={handleSearch} className="flex gap-2">
+        <div className="mb-8 flex flex-col sm:flex-row gap-4">
+          <form onSubmit={handleSearch} className="flex gap-2 flex-grow">
             <div className="relative flex-grow">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
               <Input
@@ -115,9 +124,26 @@ const Locations = () => {
             </div>
             <Button type="submit" className="eco-btn-primary">Search</Button>
           </form>
+          
+          <div className="flex gap-2 items-center">
+            <span className="text-sm text-muted-foreground whitespace-nowrap">Items per page:</span>
+            <Select 
+              value={pagination.pageSize.toString()} 
+              onValueChange={(value) => setPageSize(Number(value))}
+            >
+              <SelectTrigger className="w-16">
+                <SelectValue placeholder="6" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3">3</SelectItem>
+                <SelectItem value="6">6</SelectItem>
+                <SelectItem value="9">9</SelectItem>
+                <SelectItem value="12">12</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
-        {/* Map showing locations */}
         <Card className="eco-card mb-8 overflow-hidden">
           <CardHeader>
             <CardTitle>Nearby Facilities</CardTitle>
@@ -131,7 +157,6 @@ const Locations = () => {
           </CardContent>
         </Card>
 
-        {/* Facilities Tabs */}
         <Tabs defaultValue="recycling" onValueChange={(value) => setActiveTab(value as LocationType)} value={activeTab}>
           <TabsList className="mb-6">
             <TabsTrigger value="recycling" className="flex items-center">
@@ -148,11 +173,18 @@ const Locations = () => {
             </TabsTrigger>
           </TabsList>
 
-          {/* Dynamic Content for all tabs */}
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
           <TabsContent value={activeTab}>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {loading ? (
-                Array.from({ length: 3 }).map((_, index) => (
+                Array.from({ length: pagination.pageSize }).map((_, index) => (
                   <Card key={index} className="eco-card">
                     <CardContent className="p-6">
                       <div className="flex items-center space-x-4">
@@ -182,6 +214,62 @@ const Locations = () => {
                 </div>
               )}
             </div>
+            
+            {!loading && filteredLocations.length > 0 && pagination.totalPages > 1 && (
+              <Pagination className="mt-8">
+                <PaginationContent>
+                  <PaginationItem>
+                    <PaginationPrevious 
+                      onClick={prevPage} 
+                      className={pagination.page <= 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                  
+                  {Array.from({ length: Math.min(5, pagination.totalPages) }).map((_, i) => {
+                    const pagesToShow = Math.min(5, pagination.totalPages);
+                    const halfPagesToShow = Math.floor(pagesToShow / 2);
+                    let startPage = Math.max(1, pagination.page - halfPagesToShow);
+                    const endPage = Math.min(pagination.totalPages, startPage + pagesToShow - 1);
+                    
+                    if (endPage - startPage + 1 < pagesToShow) {
+                      startPage = Math.max(1, endPage - pagesToShow + 1);
+                    }
+                    
+                    const pageNumber = startPage + i;
+                    if (pageNumber <= endPage) {
+                      return (
+                        <PaginationItem key={pageNumber}>
+                          <PaginationLink 
+                            isActive={pagination.page === pageNumber}
+                            onClick={() => {
+                              if (pagination.page !== pageNumber) {
+                                const diff = pageNumber - pagination.page;
+                                if (diff > 0) {
+                                  for (let i = 0; i < diff; i++) nextPage();
+                                } else {
+                                  for (let i = 0; i < Math.abs(diff); i++) prevPage();
+                                }
+                              }
+                            }}
+                            className="cursor-pointer"
+                          >
+                            {pageNumber}
+                          </PaginationLink>
+                        </PaginationItem>
+                      );
+                    }
+                    return null;
+                  })}
+                  
+                  <PaginationItem>
+                    <PaginationNext 
+                      onClick={nextPage} 
+                      className={pagination.page >= pagination.totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                    />
+                  </PaginationItem>
+                </PaginationContent>
+              </Pagination>
+            )}
           </TabsContent>
         </Tabs>
       </div>
