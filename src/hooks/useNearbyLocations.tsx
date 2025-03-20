@@ -26,7 +26,7 @@ export const useNearbyLocations = (
   type?: LocationType
 ): UseNearbyLocationsReturn => {
   const [locations, setLocations] = useState<Location[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState<PaginationState>({
     page: 1,
@@ -37,6 +37,7 @@ export const useNearbyLocations = (
   const { toast } = useToast();
 
   const fetchLocations = async (resetPage: boolean = false) => {
+    // Don't try to fetch if supabase isn't initialized or user location is missing
     if (!userLocation) {
       setLocations([]);
       setLoading(false);
@@ -46,6 +47,11 @@ export const useNearbyLocations = (
     try {
       setLoading(true);
       setError(null);
+      
+      // Check if supabase client is properly initialized
+      if (!supabase || !supabase.from) {
+        throw new Error("Database connection not available. Please check Supabase integration.");
+      }
       
       const currentPage = resetPage ? 1 : pagination.page;
       const from = (currentPage - 1) * pagination.pageSize;
@@ -97,18 +103,27 @@ export const useNearbyLocations = (
     } catch (err: any) {
       console.error('Error fetching locations:', err);
       setError(err.message || 'Failed to fetch locations');
-      toast({
-        title: 'Error',
-        description: 'Failed to fetch nearby locations. Please try again.',
-        variant: 'destructive',
-      });
+      // Only show toast if it's not a Supabase connection issue
+      if (err.message !== "Database connection not available. Please check Supabase integration.") {
+        toast({
+          title: 'Error',
+          description: 'Failed to fetch nearby locations. Please try again.',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchLocations(true);
+    // Check if Supabase is properly initialized before fetching
+    if (supabase && supabase.from) {
+      fetchLocations(true);
+    } else {
+      setError("Database connection not available. Please check Supabase integration.");
+      setLoading(false);
+    }
   }, [userLocation, type, pagination.pageSize]);
 
   const nextPage = () => {
